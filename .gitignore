@@ -9,6 +9,7 @@
 *.bin
 *.out
 *.elf
+build/
 
 # CUDA specific
 *.ptx
@@ -19,14 +20,6 @@
 *.gpu
 *.dlink.obj
 *.dlink.o
-
-# CMake specific
-/build/
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-Makefile
-CTestTestfile.cmake
 
 # Visual Studio specific
 .vs/

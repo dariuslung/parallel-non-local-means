@@ -1,6 +1,6 @@
 CC=g++
 NVCC = nvcc
-CFLAGS= -O3
+CFLAGS= -O3 -Xcompiler -fopenmp
 
 BUILD_DIR=build
 SRC_DIR=src

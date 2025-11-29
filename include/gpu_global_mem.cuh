@@ -1,5 +1,5 @@
-#ifndef __CUDAFILTERINGGLOBALMEM_CUH__
-#define __CUDAFILTERINGGLOBALMEM_CUH__
+#ifndef __GPU_GLOBAL_MEM_CUH__
+#define __GPU_GLOBAL_MEM_CUH__
 
 #include <utils.cuh>
 
@@ -90,4 +90,4 @@ std::vector<float> filter_image(float * image,
 
 } // namespace gpu_global_mem
 
-#endif // __CUDAFILTERINGGLOBALMEM_CUH__
+#endif // __GPU_GLOBAL_MEM_CUH__

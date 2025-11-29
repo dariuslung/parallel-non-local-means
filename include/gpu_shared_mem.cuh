@@ -1,5 +1,5 @@
-#ifndef __CUDAFILTERINGSHAREDMEM_CUH__
-#define __CUDAFILTERINGSHAREDMEM_CUH__
+#ifndef __GPU_SHARED_MEM_CUH__
+#define __GPU_SHARED_MEM_CUH__
 
 #include <utils.cuh>
 
@@ -103,4 +103,4 @@ __host__ std::vector<float> filter_image(float * image,
 
 } // namespace gpu_shared_mem
 
-#endif // __CUDAFILTERINGSHAREDMEM_CUH__
+#endif // __GPU_SHARED_MEM_CUH__

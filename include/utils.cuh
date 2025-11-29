@@ -280,24 +280,26 @@ std::string write_images(const std::vector<float>& filtered_image,
                          float patch_sigma,
                          int row_num,
                          int col_num,
-                         bool use_gpu)
+                         int mode)
 {
     std::string params = std::to_string(patch_size) + "_" +
                          std::to_string(filter_sigma) + "_" +
                          std::to_string(patch_sigma);
-
+                         
     std::string filtered_name = "filtered_image_" + params;
-    if (use_gpu)
-    {
-        filtered_name = "cuda_" + filtered_name;
-    }
+    std::string mode_text = (mode == 0) ? "cpu_serial" :
+                            (mode == 1) ? "cpu_parallel" :
+                            (mode == 2) ? "gpu_global" :
+                            (mode == 3) ? "gpu_shared" :
+                            "unknown";
+
+    // --- Write filtered image ---
+    filtered_name = mode_text + "_" + filtered_name;
     std::string ret = file::write(filtered_image, filtered_name, row_num, col_num);
 
+    // --- Write residual ---
     std::string res_name = "residual_" + params;
-    if (use_gpu)
-    {
-        res_name = "cuda_" + res_name;
-    }
+    res_name = mode_text + "_" + res_name;
     file::write(residual, res_name, row_num, col_num);
 
     std::cout << "Output files generated successfully." << std::endl << std::endl;

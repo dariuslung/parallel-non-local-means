@@ -118,7 +118,7 @@ int main(int argc, char** argv)
         n = 256;
         image_path = "./data/in/noisy_lena.txt";
     }
-    std::cout << "  Image path: " << image_path << " (" << n << "x" << n << ")" << std::endl << std::endl;
+    std::cout << "  Image path:   " << image_path << " (" << n << "x" << n << ")" << std::endl << std::endl;
 
     // --- Read files ---
     std::vector<float> image = file::read(image_path, n, n, ',');
@@ -145,9 +145,6 @@ int main(int argc, char** argv)
             timer.stop();
         }
     }
-
-    // --- Print parameters ---
-    prt::parameters(patch_size, filter_sigma, patch_sigma);
 
     // --- Residual computation ---
     std::vector<float> residual = util::compute_residual(image, filtered_image, n);

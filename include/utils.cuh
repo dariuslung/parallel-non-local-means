@@ -207,16 +207,6 @@ void row_major_vector(const std::vector<float>& vector, int n, int m)
     row_major_array(vector.data(), n, m);
 }
 
-void parameters(int patch_size, float filter_sigma, float patch_sigma)
-{
-    std::cout << "--------------------------------------" << std::endl
-              << "Processing Parameters:"                 << std::endl
-              << "  - Patch size:   " << patch_size       << std::endl
-              << "  - Patch sigma:  " << patch_sigma      << std::endl
-              << "  - Filter Sigma: " << filter_sigma     << std::endl
-              << "--------------------------------------" << std::endl << std::endl;
-}
-
 } // namespace prt
 
 namespace file

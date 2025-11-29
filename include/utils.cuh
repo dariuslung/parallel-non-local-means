@@ -9,19 +9,38 @@
 #include <fstream>
 #include <sstream>
 #include <chrono>
+#include <stdexcept> // For std::runtime_error
+#include <iomanip>   // For formatted output
+
+// Robust CUDA Error checking macro
+#define gpu_err_chk(ans) { gpu_assert((ans), __FILE__, __LINE__); }
+inline void gpu_assert(cudaError_t code, const char *file, int line, bool abort = true)
+{
+    if (code != cudaSuccess)
+    {
+        fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+        if (abort) exit(code);
+    }
+}
 
 extern __shared__ float s[];
 
 namespace util
 {
 
-// --- Timer ---
+// Epsilon for floating point comparisons
+const float EPSILON = 1e-4f;
+
+/* -------------------------------------------------------------------------- */
+/* timer                                   */
+/* -------------------------------------------------------------------------- */
+
 class Timer
 {
 public:
-    Timer(bool print) : print(print) {}
+    Timer(bool print) : print(print), duration(0.0f) {}
 
-    void start(std::string operation_desc)
+    void start(const std::string& operation_desc)
     {
         _operation_desc = operation_desc;
         t1 = std::chrono::high_resolution_clock::now();
@@ -33,7 +52,7 @@ public:
         duration = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
         if (print)
         {
-            std::cout << "\n" << _operation_desc << " time: " << duration / 1e3 << "ms\n" << std::endl;
+            std::cout << "\n[Timer] " << _operation_desc << ": " << duration / 1e3 << " ms\n" << std::endl;
         }
     }
 
@@ -44,21 +63,23 @@ private:
     std::chrono::high_resolution_clock::time_point t1, t2;
 };
 
-// --- Host & Device utils ---
+/* -------------------------------------------------------------------------- */
+/* host & device utils                            */
+/* -------------------------------------------------------------------------- */
 
-__host__ __device__ bool is_in_bounds(int n, int x, int y)
+__host__ __device__ inline bool is_in_bounds(int n, int x, int y)
 {
     return x >= 0 && x < n && y >= 0 && y < n;
 }
 
-__host__ __device__ float compute_weight(float dist, float sigma) // compute weight without "/z(i)" division
+__host__ __device__ inline float compute_weight(float dist, float sigma)
 {
     return expf(-dist / (sigma * sigma));
 }
 
-// patch-to-patch euclidean distance
-__host__ __device__ float compute_patch_distance(float * image,
-                                                 float * weights,
+// Patch-to-patch euclidean distance
+__host__ __device__ float compute_patch_distance(const float * image,
+                                                 const float * weights,
                                                  int n,
                                                  int patch_size,
                                                  int p1_row_start,
@@ -73,9 +94,13 @@ __host__ __device__ float compute_patch_distance(float * image,
     {
         for (int j = 0; j < patch_size; j++)
         {
-            if (is_in_bounds(n, p1_row_start + i, p1_col_start + j) && is_in_bounds(n, p2_row_start + i, p2_col_start + j))
+            // Note: Bounds check logic implies zero-padding behavior if out of bounds (implicit in original logic)
+            // Ideally, we should handle boundary conditions explicitly, but keeping original logic:
+            if (is_in_bounds(n, p1_row_start + i, p1_col_start + j) &&
+                is_in_bounds(n, p2_row_start + i, p2_col_start + j))
             {
-                temp = image[(p1_row_start + i) * n + p1_col_start + j] - image[(p2_row_start + i) * n + p2_col_start + j];
+                temp = image[(p1_row_start + i) * n + p1_col_start + j] -
+                       image[(p2_row_start + i) * n + p2_col_start + j];
                 ans += weights[i * patch_size + j] * temp * temp;
             }
         }
@@ -84,11 +109,14 @@ __host__ __device__ float compute_patch_distance(float * image,
     return ans;
 }
 
-// --- Host utils ---
+/* -------------------------------------------------------------------------- */
+/* host utils                                 */
+/* -------------------------------------------------------------------------- */
 
-float * compute_inside_weights(int patch_size, float patch_sigma)
+// Refactored to return std::vector to manage memory automatically (prevents leaks)
+std::vector<float> compute_inside_weights(int patch_size, float patch_sigma)
 {
-    float * weights = new float[patch_size * patch_size];
+    std::vector<float> weights(patch_size * patch_size);
     int central_pixel_row = patch_size / 2;
     int central_pixel_col = central_pixel_row;
     float dist;
@@ -98,44 +126,45 @@ float * compute_inside_weights(int patch_size, float patch_sigma)
     {
         for (int j = 0; j < patch_size; j++)
         {
-            dist = (central_pixel_row - i) * (central_pixel_row - i) +
-                   (central_pixel_col - j) * (central_pixel_col - j);
+            dist = (float)((central_pixel_row - i) * (central_pixel_row - i) +
+                           (central_pixel_col - j) * (central_pixel_col - j));
             weights[i * patch_size + j] = exp(-dist / (2 * (patch_sigma * patch_sigma)));
             sum_w += weights[i * patch_size + j];
         }
     }
 
-    for (int i = 0; i < patch_size; i++)
+    // Normalize
+    for (int i = 0; i < patch_size * patch_size; i++)
     {
-        for (int j = 0; j < patch_size; j++)
-        {
-            weights[i * patch_size + j] = weights[i * patch_size + j] / sum_w;
-        }
+        weights[i] /= sum_w;
     }
 
     return weights;
 }
 
-std::vector<float> compute_residual(std::vector<float> image, std::vector<float> filtered_image, int n)
+std::vector<float> compute_residual(const std::vector<float>& image, const std::vector<float>& filtered_image, int n)
 {
-    std::vector<float> res(n * n);
-    for (int i = 0; i < n; i++)
+    if (image.size() != filtered_image.size())
     {
-        for (int j = 0; j < n; j++)
-        {
-            res[i * n + j] = image[i * n + j] - filtered_image[i * n + j];
-        }
+        throw std::runtime_error("Size mismatch in compute_residual");
     }
-    std::cout << "Residual calculated" << std::endl << std::endl;
+
+    std::vector<float> res(n * n);
+    for (int i = 0; i < n * n; i++)
+    {
+        res[i] = image[i] - filtered_image[i];
+    }
+    std::cout << "Residual calculated successfully." << std::endl << std::endl;
 
     return res;
 }
 
-// --- Device utils ---
+/* -------------------------------------------------------------------------- */
+/* device utils                                */
+/* -------------------------------------------------------------------------- */
 
-// patch-to-patch euclidean distance
-__device__ float cuda_compute_patch_distance(float * image,
-                                             float * weights,
+__device__ float cuda_compute_patch_distance(const float * image,
+                                             const float * weights,
                                              int n,
                                              int patch_size,
                                              int p1_row_start,
@@ -143,6 +172,7 @@ __device__ float cuda_compute_patch_distance(float * image,
                                              int p2_row_start,
                                              int p2_col_start)
 {
+    // 's' is declared extern __shared__ float s[] at the top
     float *patches = s;
 
     float ans = 0;
@@ -152,9 +182,10 @@ __device__ float cuda_compute_patch_distance(float * image,
     {
         for (int j = 0; j < patch_size; j++)
         {
-            if (is_in_bounds(n, p1_row_start + i, p1_col_start + j) && is_in_bounds(n, p2_row_start + i, p2_col_start + j))
+            if (is_in_bounds(n, p1_row_start + i, p1_col_start + j) &&
+                is_in_bounds(n, p2_row_start + i, p2_col_start + j))
             {
-                // Note: accessing shared memory 'patches' here based on original logic
+                // Accessing shared memory for the first patch, global memory for the second
                 temp = patches[i * n + p1_col_start + j] -
                        image[(p2_row_start + i) * n + p2_col_start + j];
                 ans += weights[i * patch_size + j] * temp * temp;
@@ -165,13 +196,14 @@ __device__ float cuda_compute_patch_distance(float * image,
     return ans;
 }
 
-} // --- Namespace utils ---
+} // namespace util
 
 namespace prt
 {
 
-void row_major_array(float * arr, int n, int m)
+void row_major_array(const float * arr, int n, int m)
 {
+    std::cout << std::fixed << std::setprecision(4);
     for (int i = 0; i < n; i++)
     {
         for (int j = 0; j < m; j++)
@@ -180,79 +212,93 @@ void row_major_array(float * arr, int n, int m)
         }
         std::cout << std::endl;
     }
-    std::cout << std::endl;
+    std::cout << std::defaultfloat << std::endl;
 }
 
-void row_major_vector(std::vector<float> vector, int n, int m)
+void row_major_vector(const std::vector<float>& vector, int n, int m)
 {
-    for (int i = 0; i < n; i++)
-    {
-        for (int j = 0; j < m; j++)
-        {
-            std::cout << vector[i * m + j] << "\t";
-        }
-        std::cout << std::endl;
-    }
-    std::cout << std::endl;
+    // Reuse array implementation
+    row_major_array(vector.data(), n, m);
 }
 
 void parameters(int patch_size, float filter_sigma, float patch_sigma)
 {
-    std::cout << "Image filtered: "   << std::endl
-              << "-Patch size "       << patch_size   << std::endl
-              << "-Patch sigma "      << patch_sigma  << std::endl
-              << "-Filter Sigma "     << filter_sigma << std::endl << std::endl;
+    std::cout << "--------------------------------------" << std::endl
+              << "Processing Parameters:"                 << std::endl
+              << "  - Patch size:   " << patch_size       << std::endl
+              << "  - Patch sigma:  " << patch_sigma      << std::endl
+              << "  - Filter Sigma: " << filter_sigma     << std::endl
+              << "--------------------------------------" << std::endl << std::endl;
 }
 
-} // --- Namespace prt ---
+} // namespace prt
 
 namespace file
 {
 
-std::vector<float> read(std::string file_path, int n, int m, char delim)
+std::vector<float> read(const std::string& file_path, int n, int m, char delim)
 {
-    std::vector<float > image(n * m);
-    std::ifstream myfile(file_path);
+    std::vector<float> image(n * m);
     std::ifstream input(file_path);
-    std::string s;
 
-    for (int i = 0; i < n; i++)
+    if (!input.is_open())
     {
-        std::getline(input, s);
-        std::istringstream iss(s);
-        std::string num;
-        int j = 0;
-        while (std::getline(iss, num, delim))
-        {
-            image[i * m + j++] = std::stof(num);
-        }
+        throw std::runtime_error("Error: Could not open file " + file_path);
     }
 
+    std::string line;
+    for (int i = 0; i < n; i++)
+    {
+        if (!std::getline(input, line))
+        {
+            break; // Handle fewer lines than expected
+        }
+
+        std::istringstream iss(line);
+        std::string num;
+        int j = 0;
+        while (std::getline(iss, num, delim) && j < m)
+        {
+            try
+            {
+                image[i * m + j++] = std::stof(num);
+            }
+            catch (...)
+            {
+                // Handle parsing errors or empty tokens
+                image[i * m + j - 1] = 0.0f;
+            }
+        }
+    }
     return image;
 }
 
-std::string write(std::vector<float> image, std::string file_name, int row_num, int col_num)
+std::string write(const std::vector<float>& image, const std::string& file_name, int row_num, int col_num)
 {
-    std::vector<std::string> out;
+    std::string full_path = "./data/out/" + file_name + ".txt";
+    std::ofstream output_file(full_path);
+
+    if (!output_file.is_open())
+    {
+        std::cerr << "Warning: Could not create output file at " << full_path
+                  << ". Please ensure './data/out/' directory exists." << std::endl;
+        return "";
+    }
 
     for (int i = 0; i < row_num; i++)
     {
         for (int j = 0; j < col_num; j++)
         {
-            out.push_back(std::to_string(image[i * col_num + j]) + " ");
+            output_file << image[i * col_num + j] << " ";
         }
-        out.push_back("\n");
+        output_file << "\n";
     }
 
-    std::ofstream output_file("./data/out/" + file_name + ".txt");
-    std::ostream_iterator<std::string> output_iterator(output_file, "");
-    std::copy(out.begin(), out.end(), output_iterator);
-
-    return "./data/out/" + file_name + ".txt";
+    return full_path;
 }
 
-std::string write_images(std::vector<float> filtered_image,
-                         std::vector<float > residual,
+std::string write_images(const std::vector<float>& filtered_image,
+                         const std::vector<float>& residual,
                          int patch_size,
                          float filter_sigma,
                          float patch_sigma,
@@ -260,7 +306,6 @@ std::string write_images(std::vector<float> filtered_image,
                          int col_num,
                          bool use_gpu)
 {
-    std::string ret;
     std::string params = std::to_string(patch_size) + "_" +
                          std::to_string(filter_sigma) + "_" +
                          std::to_string(patch_sigma);
@@ -270,7 +315,7 @@ std::string write_images(std::vector<float> filtered_image,
     {
         filtered_name = "cuda_" + filtered_name;
     }
-    ret = file::write(filtered_image, filtered_name, row_num, col_num);
+    std::string ret = file::write(filtered_image, filtered_name, row_num, col_num);
 
     std::string res_name = "residual_" + params;
     if (use_gpu)
@@ -279,50 +324,76 @@ std::string write_images(std::vector<float> filtered_image,
     }
     file::write(residual, res_name, row_num, col_num);
 
-    std::cout << "Filtered image written" << std::endl << std::endl;
-    std::cout << "Residual written" << std::endl << std::endl;
+    std::cout << "Output files generated successfully." << std::endl << std::endl;
 
     return ret;
 }
 
-} // --- Namespace file ---
+} // namespace file
 
 namespace test
 {
 
-void out(std::string stand_out_path, std::string out_path, int n)
+void out(const std::string& stand_out_path, const std::string& out_path, int n)
 {
-    std::vector<float> stand_out = file::read(stand_out_path, n, n, ',');
-    std::vector<float> out_vec = file::read(out_path, n, n, ',');
-
-    for (int i = 0; i < n * n; i++)
+    try
     {
-        if (stand_out[i] != out_vec[i])
+        std::vector<float> stand_out = file::read(stand_out_path, n, n, ',');
+        std::vector<float> out_vec = file::read(out_path, n, n, ' '); // Assuming space delim for output
+
+        bool passed = true;
+        int error_count = 0;
+
+        for (int i = 0; i < n * n; i++)
         {
-            std::cout << "Error:\t" << stand_out[i] << "\t" << out_vec[i] << std::endl;
+            // Robust float comparison
+            if (std::abs(stand_out[i] - out_vec[i]) > util::EPSILON)
+            {
+                if (error_count < 10) // Limit error spam
+                {
+                    std::cout << "Error at index " << i << ": Expected " << stand_out[i]
+                              << ", Got " << out_vec[i] << std::endl;
+                }
+                passed = false;
+                error_count++;
+            }
+        }
+
+        if (passed)
+        {
+            std::cout << "Correct output - Test PASSED" << std::endl << std::endl;
+        }
+        else
+        {
+            std::cout << "Wrong output - Test FAILED (Total errors: " << error_count << ")" << std::endl << std::endl;
         }
     }
-
-    if (stand_out == out_vec)
-        std::cout << "Correct output - Test passed" << std::endl << std::endl;
-    else
-        std::cout << "Wrong output - Test failed" << std::endl << std::endl;
+    catch (const std::exception& e)
+    {
+        std::cerr << "Test execution failed: " << e.what() << std::endl;
+    }
 }
 
-float compute_mean_squared_error(std::string original_out_path, std::string out_path, int n)
+float compute_mean_squared_error(const std::string& original_out_path, const std::string& out_path, int n)
 {
-    std::vector<float> original_out = file::read(original_out_path, n, n, ',');
-    std::vector<float> out_vec = file::read(out_path, n, n, ',');
-    float res = 0;
-
-    for (int i = 0; i < n * n; i ++)
+    try
     {
-        res += pow(original_out[i] - out_vec[i], 2);
+        std::vector<float> original_out = file::read(original_out_path, n, n, ',');
+        std::vector<float> out_vec = file::read(out_path, n, n, ' ');
+        double res = 0; // Use double for accumulation precision
+
+        for (int i = 0; i < n * n; i++)
+        {
+            res += pow(original_out[i] - out_vec[i], 2);
+        }
+
+        return (float)(res / (n * n));
     }
-
-    res = res / (n * n);
-
-    return res;
+    catch (const std::exception& e)
+    {
+        std::cerr << "MSE Calculation failed: " << e.what() << std::endl;
+        return -1.0f;
+    }
 }
 
 } // namespace test

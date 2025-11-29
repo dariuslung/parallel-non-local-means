@@ -118,11 +118,11 @@ int main(int argc, char** argv)
         n = 256;
         image_path = "./data/in/noisy_lena.txt";
     }
-    std::cout << "Image path: " << image_path << " (" << n << "x" << n << ")" << std::endl;
+    std::cout << "  Image path: " << image_path << " (" << n << "x" << n << ")" << std::endl << std::endl;
 
     // --- Read files ---
     std::vector<float> image = file::read(image_path, n, n, ',');
-    std::cout << "Image read" << std::endl;
+    std::cout << "Image loaded." << std::endl;
     std::vector<float> filtered_image;
 
     // --- CPU Image Filtering ---

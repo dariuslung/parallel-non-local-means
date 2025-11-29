@@ -53,7 +53,7 @@ int main(int argc, char** argv)
     int c;
 
     // --- Parse options ---
-    while ((c = getopt_long(argc, argv, "p:f:s:g:m:i:h", long_options, &option_index)) != -1)
+    while ((c = getopt_long(argc, argv, "n:p:f:s:g:m:h", long_options, &option_index)) != -1)
     {
         switch (c)
         {

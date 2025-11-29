@@ -31,10 +31,7 @@ namespace util
 // Epsilon for floating point comparisons
 const float EPSILON = 1e-4f;
 
-/* -------------------------------------------------------------------------- */
-/* timer                                   */
-/* -------------------------------------------------------------------------- */
-
+// --- Timer ---
 class Timer
 {
 public:
@@ -63,10 +60,7 @@ private:
     std::chrono::high_resolution_clock::time_point t1, t2;
 };
 
-/* -------------------------------------------------------------------------- */
-/* host & device utils                            */
-/* -------------------------------------------------------------------------- */
-
+// --- Host & device utils ---
 __host__ __device__ inline bool is_in_bounds(int n, int x, int y)
 {
     return x >= 0 && x < n && y >= 0 && y < n;
@@ -94,8 +88,7 @@ __host__ __device__ float compute_patch_distance(const float * image,
     {
         for (int j = 0; j < patch_size; j++)
         {
-            // Note: Bounds check logic implies zero-padding behavior if out of bounds (implicit in original logic)
-            // Ideally, we should handle boundary conditions explicitly, but keeping original logic:
+            // Bounds check logic implies zero-padding behavior if out of bounds
             if (is_in_bounds(n, p1_row_start + i, p1_col_start + j) &&
                 is_in_bounds(n, p2_row_start + i, p2_col_start + j))
             {
@@ -109,11 +102,7 @@ __host__ __device__ float compute_patch_distance(const float * image,
     return ans;
 }
 
-/* -------------------------------------------------------------------------- */
-/* host utils                                 */
-/* -------------------------------------------------------------------------- */
-
-// Refactored to return std::vector to manage memory automatically (prevents leaks)
+//  --- Host utils ---
 std::vector<float> compute_inside_weights(int patch_size, float patch_sigma)
 {
     std::vector<float> weights(patch_size * patch_size);
@@ -159,10 +148,7 @@ std::vector<float> compute_residual(const std::vector<float>& image, const std::
     return res;
 }
 
-/* -------------------------------------------------------------------------- */
-/* device utils                                */
-/* -------------------------------------------------------------------------- */
-
+//  --- Device utils ---
 __device__ float cuda_compute_patch_distance(const float * image,
                                              const float * weights,
                                              int n,

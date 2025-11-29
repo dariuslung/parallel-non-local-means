@@ -50,13 +50,13 @@ std::vector<float> filter_image(float * image,
                                 float filter_sigma)
 {
     std::vector<float> res(n * n);
-    float * weights = util::compute_inside_weights(patch_size, patch_sigma);
+    std::vector<float> weights = util::compute_inside_weights(patch_size, patch_sigma);
 
     for (int i = 0; i < n; i++)
     {
         for (int j = 0; j < n; j++)
         {
-            res[i * n + j] = filter_pixel(image, weights, n, patch_size, i, j, filter_sigma);
+            res[i * n + j] = filter_pixel(image, weights.data(), n, patch_size, i, j, filter_sigma);
         }
     }
 

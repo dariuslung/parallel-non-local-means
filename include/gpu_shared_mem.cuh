@@ -73,7 +73,8 @@ __host__ std::vector<float> filter_image(float * image,
                                          float filter_sigma)
 {
     std::vector<float> res(n * n);
-    float * weights = util::compute_inside_weights(patch_size, patch_sigma);
+
+    std::vector<float> weights = util::compute_inside_weights(patch_size, patch_sigma);
 
     int size_image = n * n * sizeof(float);
     int size_weights = patch_size * patch_size * sizeof(float);
@@ -81,12 +82,13 @@ __host__ std::vector<float> filter_image(float * image,
 
     float *d_image, *d_weights, *d_res;
 
-    cudaMalloc((void **)&d_image, size_image);
-    cudaMalloc((void **)&d_weights, size_weights);
-    cudaMalloc((void **)&d_res, size_image);
+    gpu_err_chk(cudaMalloc((void **)&d_image, size_image));
+    gpu_err_chk(cudaMalloc((void **)&d_weights, size_weights));
+    gpu_err_chk(cudaMalloc((void **)&d_res, size_image));
 
     cudaMemcpy(d_image, image, size_image, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_weights, weights, size_weights, cudaMemcpyHostToDevice);
+    
+    cudaMemcpy(d_weights, weights.data(), size_weights, cudaMemcpyHostToDevice);
 
     filter_pixel<<<n, n, size_shared_memory>>>(d_image, d_weights, n, patch_size, filter_sigma, d_res);
 

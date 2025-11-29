@@ -11,6 +11,9 @@
 *.elf
 build/
 
+# Test artifacts
+data/out/*
+
 # CUDA specific
 *.ptx
 *.cubin

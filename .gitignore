@@ -1,0 +1,61 @@
+# Build artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.lib
+*.bin
+*.out
+*.elf
+
+# CUDA specific
+*.ptx
+*.cubin
+*.fatbin
+*.link.obj
+*.link.o
+*.gpu
+*.dlink.obj
+*.dlink.o
+
+# CMake specific
+/build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CTestTestfile.cmake
+
+# Visual Studio specific
+.vs/
+*.vcxproj.user
+*.suo
+*.opensdf
+*.sdf
+*.ipch
+Debug/
+Release/
+x64/
+Win32/
+*.VC.db
+*.VC.VC.opendb
+
+# Eclipse specific
+.project
+.cproject
+.settings/
+
+# Other common temporary files
+*~
+*.bak
+*.swp
+*.log
+*.tmp
+*.gch
+*.pch
+
+# Editor specific
+.vscode/
+.idea/

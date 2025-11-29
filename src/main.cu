@@ -18,7 +18,6 @@ void print_usage(const char* program_name)
               << "  -s, --patch-sigma <float>  Set patch sigma (Default: 0.8)\n"
               << "  -g, --use-gpu <0/1>        Enable/Disable GPU (Default: 0)\n"
               << "  -m, --use-shared <0/1>     Enable/Disable Shared Mem (Default: 0)\n"
-              << "  -i, --image-path <string>  Set image path\n"
               << "  -h, --help                 Show this help message\n";
 }
 
@@ -40,12 +39,12 @@ int main(int argc, char** argv)
     // --- Define long options ---
     const struct option long_options[] =
     {
+        {"image-num",    required_argument, nullptr, 'n'},
         {"patch-size",   required_argument, nullptr, 'p'},
         {"filter-sigma", required_argument, nullptr, 'f'},
         {"patch-sigma",  required_argument, nullptr, 's'},
         {"use-gpu",      required_argument, nullptr, 'g'},
         {"use-shared",   required_argument, nullptr, 'm'},
-        {"image-path",   required_argument, nullptr, 'i'},
         {"help",         no_argument,       nullptr, 'h'},
         {nullptr, 0, nullptr, 0}
     };
@@ -58,6 +57,10 @@ int main(int argc, char** argv)
     {
         switch (c)
         {
+            case 'n':
+                image_num = std::atoi(optarg);
+                break;
+                
             case 'p':
                 patch_size = std::atoi(optarg);
                 break;
@@ -76,10 +79,6 @@ int main(int argc, char** argv)
 
             case 'm':
                 use_shared_mem = (std::atoi(optarg) != 0);
-                break;
-
-            case 'i':
-                image_path = std::string(optarg);
                 break;
 
             case 'h':

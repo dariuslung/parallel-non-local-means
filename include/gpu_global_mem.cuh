@@ -110,7 +110,7 @@ namespace gpu_global_mem
             gpu_err_chk(cudaDeviceSynchronize());
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-            std::cout << "NLM GPU Global Calculation (" << params.img_width << "x" << params.img_width << ") took: " << duration.count() / 1000.0 << " ms" << std::endl; 
+            std::cout << "NLM Calculation in GPU Global memory (" << params.img_width << "x" << params.img_width << ") took: " << duration.count() / 1000.0 << " ms" << std::endl; 
             size_t img_bytes = params.img_width * params.img_width * sizeof(float);
             gpu_err_chk(cudaMemcpy(result_host.data(), dev_out_buf, img_bytes, cudaMemcpyDeviceToHost));
 

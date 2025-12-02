@@ -73,7 +73,7 @@ namespace cpu_parallel
             }
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-            std::cout << "NLM Calculation for entire image (" << params.img_width << "x" << params.img_width << ") took: " << duration.count() / 1000.0 << " ms" << std::endl; 
+            std::cout << "NLM Calculation in CPU parallel (" << params.img_width << "x" << params.img_width << ") took: " << duration.count() / 1000.0 << " ms" << std::endl; 
             return result;
         }
     };

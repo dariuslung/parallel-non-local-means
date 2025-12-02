@@ -144,7 +144,7 @@ namespace gpu_shared_mem
             gpu_err_chk(cudaMemcpy(host_res.data(), d_res_ptr, bytes_img, cudaMemcpyDeviceToHost));
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-            std::cout << "NLM GPU Global Calculation (" << params.img_width << "x" << params.img_width << ") took: " << duration.count() / 1000.0 << " ms" << std::endl; 
+            std::cout << "NLM Calculation in GPU Shared memory (" << params.img_width << "x" << params.img_width << ") took: " << duration.count() / 1000.0 << " ms" << std::endl; 
             
             cudaFree(d_img_ptr);
             cudaFree(d_weights_ptr);

@@ -1,93 +1,128 @@
 #ifndef __GPU_GLOBAL_MEM_CUH__
 #define __GPU_GLOBAL_MEM_CUH__
 
-#include <utils.cuh>
+#include "utils.cuh"
 
 namespace gpu_global_mem
 {
-
-__global__ void filter_pixel(float * image,
-                             float * weights,
-                             int n,
-                             int patch_size,
-                             float sigma,
-                             float *filtered_image)
-{
-    int index = threadIdx.x + blockIdx.x * blockDim.x;
-
-    if (index >= n * n)
+    // Global Kernel: Located outside class to be callable by CUDA runtime
+    __global__ void k_nlm_global(float* d_img, float* d_weights, int width, int p_size, float sigma, float* d_out)
     {
-        return;
-    }
-
-    int pixel_row = blockIdx.x;
-    int pixel_col = threadIdx.x;
-
-    float res = 0;
-    float sum_w = 0; // sum_w is the Z(i) of w(i, j) formula
-    float dist;
-    float w;
-    int patch_row_start = pixel_row - patch_size / 2;
-    int patch_col_start = pixel_col - patch_size / 2;
-
-    __syncthreads();
-
-    for (int i = 0; i < n; i++)
-    {
-        for (int j = 0; j < n; j++)
+        int tid = threadIdx.x + blockIdx.x * blockDim.x;
+        
+        if (tid >= width * width)
         {
-            dist = util::compute_patch_distance(image,
-                                                weights,
-                                                n,
-                                                patch_size,
-                                                patch_row_start,
-                                                patch_col_start,
-                                                i - patch_size / 2,
-                                                j - patch_size / 2);
-            w = util::compute_weight(dist, sigma);
-            sum_w += w;
-            res += w * image[i * n + j];
+            return;
         }
+
+        int r_idx = blockIdx.x; // Row derived from Block ID
+        int c_idx = threadIdx.x; // Col derived from Thread ID within block
+
+        // Re-calculate row/col based on linear ID to be safe if dimensions change
+        // But following original logic: 
+        // Note: Original code mapped Block->Row and Thread->Col. 
+        // This implies gridDim = n, blockDim = n.
+        
+        int r_start = r_idx - p_size / 2;
+        int c_start = c_idx - p_size / 2;
+
+        float res_val = 0.0f;
+        float w_sum = 0.0f;
+
+        // Iterate entire image
+        for (int i = 0; i < width; i++)
+        {
+            for (int j = 0; j < width; j++)
+            {
+                float dist = util::calc_patch_dist(d_img, d_weights, width, p_size,
+                                                   r_start, c_start,
+                                                   i - p_size / 2, j - p_size / 2);
+                                                   
+                float weight = util::calc_exponent_weight(dist, sigma);
+                
+                w_sum += weight;
+                res_val += weight * d_img[i * width + j];
+            }
+        }
+
+        d_out[tid] = res_val / w_sum;
     }
-    res = res / sum_w;
 
-    filtered_image[index] = res;
+    class GpuGlobalProcessor
+    {
+    private:
+        util::NlmParams params;
+        float *dev_img_buf = nullptr;
+        float *dev_weight_buf = nullptr;
+        float *dev_out_buf = nullptr;
+
+        void allocate_resources(const std::vector<float>& host_weights, const float* host_img)
+        {
+            size_t img_bytes = params.img_width * params.img_width * sizeof(float);
+            size_t w_bytes = params.patch_size * params.patch_size * sizeof(float);
+
+            gpu_err_chk(cudaMalloc((void**)&dev_img_buf, img_bytes));
+            gpu_err_chk(cudaMalloc((void**)&dev_weight_buf, w_bytes));
+            gpu_err_chk(cudaMalloc((void**)&dev_out_buf, img_bytes));
+
+            gpu_err_chk(cudaMemcpy(dev_img_buf, host_img, img_bytes, cudaMemcpyHostToDevice));
+            gpu_err_chk(cudaMemcpy(dev_weight_buf, host_weights.data(), w_bytes, cudaMemcpyHostToDevice));
+        }
+
+        void free_resources()
+        {
+            if (dev_img_buf) cudaFree(dev_img_buf);
+            if (dev_weight_buf) cudaFree(dev_weight_buf);
+            if (dev_out_buf) cudaFree(dev_out_buf);
+        }
+
+    public:
+        GpuGlobalProcessor(int n, int ps, float psig, float fsig)
+        {
+            params = {n, ps, psig, fsig};
+        }
+
+        ~GpuGlobalProcessor()
+        {
+            // RAII destructor not fully utilized here due to manual control requirement in this context,
+            // but good practice to ensure cleanup.
+        }
+
+        std::vector<float> run(float* image_data)
+        {
+            std::vector<float> result_host(params.img_width * params.img_width);
+            std::vector<float> weights = util::generate_gaussian_kernel(params.patch_size, params.patch_sigma);
+
+            allocate_resources(weights, image_data);
+
+            // Launch configuration:
+            // Grid size = n (one block per row)
+            // Block size = n (one thread per col)
+            // Note: This assumes n <= 1024 (max threads per block).
+            k_nlm_global<<<params.img_width, params.img_width>>>(dev_img_buf, 
+                                                                 dev_weight_buf, 
+                                                                 params.img_width, 
+                                                                 params.patch_size, 
+                                                                 params.filter_sigma, 
+                                                                 dev_out_buf);
+            
+            gpu_err_chk(cudaPeekAtLastError());
+            gpu_err_chk(cudaDeviceSynchronize());
+
+            size_t img_bytes = params.img_width * params.img_width * sizeof(float);
+            gpu_err_chk(cudaMemcpy(result_host.data(), dev_out_buf, img_bytes, cudaMemcpyDeviceToHost));
+
+            free_resources();
+            return result_host;
+        }
+    };
+
+    // Wrapper
+    inline std::vector<float> filter_image(float* image, int n, int patch_size, float patch_sigma, float filter_sigma)
+    {
+        GpuGlobalProcessor engine(n, patch_size, patch_sigma, filter_sigma);
+        return engine.run(image);
+    }
 }
-
-std::vector<float> filter_image(float * image,
-                                int n,
-                                int patch_size,
-                                float patch_sigma,
-                                float filter_sigma)
-{
-    std::vector<float> res(n * n);
-    
-    std::vector<float> weights = util::compute_inside_weights(patch_size, patch_sigma);
-
-    int size_image = n * n * sizeof(float);
-    int size_weights = patch_size * patch_size * sizeof(float);
-
-    float *d_image, *d_weights, *d_res;
-
-    gpu_err_chk(cudaMalloc((void **)&d_image, size_image));
-    gpu_err_chk(cudaMalloc((void **)&d_weights, size_weights));
-    gpu_err_chk(cudaMalloc((void **)&d_res, size_image));
-
-    cudaMemcpy(d_image, image, size_image, cudaMemcpyHostToDevice);
-    
-    cudaMemcpy(d_weights, weights.data(), size_weights, cudaMemcpyHostToDevice);
-
-    filter_pixel<<<n, n>>>(d_image, d_weights, n, patch_size, filter_sigma, d_res);
-
-    cudaMemcpy(res.data(), d_res, size_image, cudaMemcpyDeviceToHost);
-
-    cudaFree(d_image);
-    cudaFree(d_weights);
-    cudaFree(d_res);
-
-    return res;
-}
-
-} // namespace gpu_global_mem
 
 #endif // __GPU_GLOBAL_MEM_CUH__

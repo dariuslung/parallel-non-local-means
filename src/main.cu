@@ -156,7 +156,7 @@ int main(int argc, char** argv)
     }
 
     // --- Residual computation ---
-    std::vector<float> residual = util::compute_residual(image, filtered_image, n);
+    std::vector<float> residual = util::calc_diff_image(image, filtered_image, n);
 
     // --- File writing ---
     std::string outPath = file::write_images(filtered_image, residual, patch_size, filter_sigma, patch_sigma , n, n, mode);

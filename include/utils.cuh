@@ -9,11 +9,12 @@
 #include <fstream>
 #include <sstream>
 #include <chrono>
-#include <stdexcept> // For std::runtime_error
-#include <iomanip>   // For formatted output
+#include <stdexcept>
+#include <iomanip>
 
 // Robust CUDA Error checking macro
 #define gpu_err_chk(ans) { gpu_assert((ans), __FILE__, __LINE__); }
+
 inline void gpu_assert(cudaError_t code, const char *file, int line, bool abort = true)
 {
     if (code != cudaSuccess)
@@ -23,357 +24,248 @@ inline void gpu_assert(cudaError_t code, const char *file, int line, bool abort 
     }
 }
 
-extern __shared__ float s[];
-
 namespace util
 {
+    // Constants
+    const float EPSILON = 1e-4f;
 
-// Epsilon for floating point comparisons
-const float EPSILON = 1e-4f;
-
-// --- Timer ---
-class Timer
-{
-public:
-    Timer(bool print) : print(print), duration(0.0f) {}
-
-    void start(const std::string& operation_desc)
+    // Configuration structure to pass parameters cleanly
+    struct NlmParams
     {
-        _operation_desc = operation_desc;
-        t1 = std::chrono::high_resolution_clock::now();
-    }
+        int img_width;
+        int patch_size;
+        float patch_sigma;
+        float filter_sigma;
+    };
 
-    void stop()
+    // --- Timer Class ---
+    class Timer
     {
-        t2 = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-        if (print)
+    private:
+        float duration_val;
+        bool should_print;
+        std::string operation_name;
+        std::chrono::high_resolution_clock::time_point time_start, time_end;
+
+    public:
+        Timer(bool print_enabled) : should_print(print_enabled), duration_val(0.0f) {}
+
+        void start(const std::string& desc)
         {
-            std::cout << "\n[Timer] " << _operation_desc << ": " << duration / 1e3 << " ms\n" << std::endl;
+            operation_name = desc;
+            time_start = std::chrono::high_resolution_clock::now();
         }
-    }
 
-private:
-    float duration;
-    bool print;
-    std::string _operation_desc;
-    std::chrono::high_resolution_clock::time_point t1, t2;
-};
-
-// --- Host & device utils ---
-__host__ __device__ inline bool is_in_bounds(int n, int x, int y)
-{
-    return x >= 0 && x < n && y >= 0 && y < n;
-}
-
-__host__ __device__ inline float compute_weight(float dist, float sigma)
-{
-    return expf(-dist / (sigma * sigma));
-}
-
-// Patch-to-patch euclidean distance
-__host__ __device__ float compute_patch_distance(const float * image,
-                                                 const float * weights,
-                                                 int n,
-                                                 int patch_size,
-                                                 int p1_row_start,
-                                                 int p1_col_start,
-                                                 int p2_row_start,
-                                                 int p2_col_start)
-{
-    float ans = 0;
-    float temp;
-
-    for (int i = 0; i < patch_size; i++)
-    {
-        for (int j = 0; j < patch_size; j++)
+        void stop()
         {
-            // Bounds check logic implies zero-padding behavior if out of bounds
-            if (is_in_bounds(n, p1_row_start + i, p1_col_start + j) &&
-                is_in_bounds(n, p2_row_start + i, p2_col_start + j))
+            time_end = std::chrono::high_resolution_clock::now();
+            duration_val = std::chrono::duration_cast<std::chrono::microseconds>(time_end - time_start).count();
+            
+            if (should_print)
             {
-                temp = image[(p1_row_start + i) * n + p1_col_start + j] -
-                       image[(p2_row_start + i) * n + p2_col_start + j];
-                ans += weights[i * patch_size + j] * temp * temp;
+                std::cout << "\n[Timer] " << operation_name << ": " << duration_val / 1e3 << " ms\n" << std::endl;
             }
         }
+    };
+
+    // --- Math & Bounds Helpers ---
+
+    __host__ __device__ inline bool check_bound(int limit, int r, int c)
+    {
+        return (r >= 0 && r < limit && c >= 0 && c < limit);
     }
 
-    return ans;
-}
-
-//  --- Host utils ---
-std::vector<float> compute_inside_weights(int patch_size, float patch_sigma)
-{
-    std::vector<float> weights(patch_size * patch_size);
-    int central_pixel_row = patch_size / 2;
-    int central_pixel_col = central_pixel_row;
-    float dist;
-    float sum_w = 0;
-
-    for (int i = 0; i < patch_size; i++)
+    __host__ __device__ inline float calc_exponent_weight(float dist_sq, float sigma)
     {
-        for (int j = 0; j < patch_size; j++)
+        return expf(-dist_sq / (sigma * sigma));
+    }
+
+    // Standard Euclidean distance for patches (Host & Global Memory GPU)
+    __host__ __device__ inline float calc_patch_dist(const float * img_data,
+                                                     const float * weight_kernel,
+                                                     int width,
+                                                     int p_size,
+                                                     int r1,
+                                                     int c1,
+                                                     int r2,
+                                                     int c2)
+    {
+        float diff_sum = 0.0f;
+        float pixel_diff;
+        
+        // Iterating flatly or 2D, here we do 2D for clarity in patch logic
+        for (int i = 0; i < p_size; i++)
         {
-            dist = (float)((central_pixel_row - i) * (central_pixel_row - i) +
-                           (central_pixel_col - j) * (central_pixel_col - j));
-            weights[i * patch_size + j] = exp(-dist / (2 * (patch_sigma * patch_sigma)));
-            sum_w += weights[i * patch_size + j];
-        }
-    }
-
-    // Normalize
-    for (int i = 0; i < patch_size * patch_size; i++)
-    {
-        weights[i] /= sum_w;
-    }
-
-    return weights;
-}
-
-std::vector<float> compute_residual(const std::vector<float>& image, const std::vector<float>& filtered_image, int n)
-{
-    if (image.size() != filtered_image.size())
-    {
-        throw std::runtime_error("Size mismatch in compute_residual");
-    }
-
-    std::vector<float> res(n * n);
-    for (int i = 0; i < n * n; i++)
-    {
-        res[i] = image[i] - filtered_image[i];
-    }
-    std::cout << "Residual calculated successfully." << std::endl << std::endl;
-
-    return res;
-}
-
-//  --- Device utils ---
-__device__ float cuda_compute_patch_distance(const float * image,
-                                             const float * weights,
-                                             int n,
-                                             int patch_size,
-                                             int p1_row_start,
-                                             int p1_col_start,
-                                             int p2_row_start,
-                                             int p2_col_start)
-{
-    // 's' is declared extern __shared__ float s[] at the top
-    float *patches = s;
-
-    float ans = 0;
-    float temp;
-
-    for (int i = 0; i < patch_size; i++)
-    {
-        for (int j = 0; j < patch_size; j++)
-        {
-            if (is_in_bounds(n, p1_row_start + i, p1_col_start + j) &&
-                is_in_bounds(n, p2_row_start + i, p2_col_start + j))
+            for (int j = 0; j < p_size; j++)
             {
-                // Accessing shared memory for the first patch, global memory for the second
-                temp = patches[i * n + p1_col_start + j] -
-                       image[(p2_row_start + i) * n + p2_col_start + j];
-                ans += weights[i * patch_size + j] * temp * temp;
+                // Check bounds for both patches
+                bool p1_in = check_bound(width, r1 + i, c1 + j);
+                bool p2_in = check_bound(width, r2 + i, c2 + j);
+
+                if (p1_in && p2_in)
+                {
+                    int idx1 = (r1 + i) * width + (c1 + j);
+                    int idx2 = (r2 + i) * width + (c2 + j);
+                    int w_idx = i * p_size + j;
+
+                    pixel_diff = img_data[idx1] - img_data[idx2];
+                    diff_sum += weight_kernel[w_idx] * pixel_diff * pixel_diff;
+                }
             }
         }
+        return diff_sum;
     }
 
-    return ans;
-}
+    // --- Pre-computation Helpers ---
 
-} // namespace util
-
-namespace prt
-{
-
-void row_major_array(const float * arr, int n, int m)
-{
-    std::cout << std::fixed << std::setprecision(4);
-    for (int i = 0; i < n; i++)
+    inline std::vector<float> generate_gaussian_kernel(int p_size, float p_sigma)
     {
-        for (int j = 0; j < m; j++)
+        std::vector<float> kernel(p_size * p_size);
+        int center = p_size / 2;
+        float total_weight = 0.0f;
+
+        for (int i = 0; i < p_size; i++)
         {
-            std::cout << arr[i * m + j] << "\t";
+            for (int j = 0; j < p_size; j++)
+            {
+                float dy = static_cast<float>(center - i);
+                float dx = static_cast<float>(center - j);
+                float dist_sq = dy*dy + dx*dx;
+                
+                float val = exp(-dist_sq / (2.0f * p_sigma * p_sigma));
+                kernel[i * p_size + j] = val;
+                total_weight += val;
+            }
         }
-        std::cout << std::endl;
+
+        // Normalize
+        for (auto& k : kernel)
+        {
+            k /= total_weight;
+        }
+
+        return kernel;
     }
-    std::cout << std::defaultfloat << std::endl;
+
+    inline std::vector<float> calc_diff_image(const std::vector<float>& src, const std::vector<float>& filtered, int n)
+    {
+        if (src.size() != filtered.size()) throw std::runtime_error("Dimension mismatch in residual calc.");
+
+        std::vector<float> residual(n * n);
+        for (size_t i = 0; i < src.size(); i++)
+        {
+            residual[i] = src[i] - filtered[i];
+        }
+        std::cout << "Residual calculated successfully.\n\n";
+        return residual;
+    }
 }
 
-void row_major_vector(const std::vector<float>& vector, int n, int m)
-{
-    // Reuse array implementation
-    row_major_array(vector.data(), n, m);
-}
-
-} // namespace prt
-
+// IO and Test namespaces simplified for structure
 namespace file
 {
-
-std::vector<float> read(const std::string& file_path, int n, int m, char delim)
-{
-    std::vector<float> image(n * m);
-    std::ifstream input(file_path);
-
-    if (!input.is_open())
+    inline std::vector<float> read(const std::string& path, int rows, int cols, char delim)
     {
-        throw std::runtime_error("Error: Could not open file " + file_path);
-    }
+        std::vector<float> buffer(rows * cols);
+        std::ifstream file_stream(path);
 
-    std::string line;
-    for (int i = 0; i < n; i++)
-    {
-        if (!std::getline(input, line))
-        {
-            break; // Handle fewer lines than expected
-        }
+        if (!file_stream.is_open()) throw std::runtime_error("Cannot open: " + path);
 
-        std::istringstream iss(line);
-        std::string num;
-        int j = 0;
-        while (std::getline(iss, num, delim) && j < m)
+        std::string line_buf;
+        for (int i = 0; i < rows; i++)
         {
-            try
+            if (!std::getline(file_stream, line_buf)) break;
+            std::istringstream stream(line_buf);
+            std::string token;
+            int j = 0;
+            while (std::getline(stream, token, delim) && j < cols)
             {
-                image[i * m + j++] = std::stof(num);
-            }
-            catch (...)
-            {
-                // Handle parsing errors or empty tokens
-                image[i * m + j - 1] = 0.0f;
+                try { buffer[i * cols + j++] = std::stof(token); }
+                catch (...) { buffer[i * cols + j - 1] = 0.0f; }
             }
         }
-    }
-    return image;
-}
-
-std::string write(const std::vector<float>& image, const std::string& file_name, int row_num, int col_num)
-{
-    std::string full_path = "./data/out/" + file_name + ".txt";
-    std::ofstream output_file(full_path);
-
-    if (!output_file.is_open())
-    {
-        std::cerr << "Warning: Could not create output file at " << full_path
-                  << ". Please ensure './data/out/' directory exists." << std::endl;
-        return "";
+        return buffer;
     }
 
-    for (int i = 0; i < row_num; i++)
+    inline std::string write(const std::vector<float>& data, const std::string& name, int r, int c)
     {
-        for (int j = 0; j < col_num; j++)
+        std::string path = "./data/out/" + name + ".txt";
+        std::ofstream out_stream(path);
+        if (!out_stream.is_open())
         {
-            output_file << image[i * col_num + j] << " ";
+            std::cerr << "Failed to write to " << path << std::endl;
+            return "";
         }
-        output_file << "\n";
+
+        for (int i = 0; i < r; i++)
+        {
+            for (int j = 0; j < c; j++)
+            {
+                out_stream << data[i * c + j] << " ";
+            }
+            out_stream << "\n";
+        }
+        return path;
     }
 
-    return full_path;
+    inline std::string write_images(const std::vector<float>& img, const std::vector<float>& res, 
+                                    int p_size, float f_sig, float p_sig, int r, int c, int mode_idx)
+    {
+        std::string suffix = std::to_string(p_size) + "_" + std::to_string(f_sig) + "_" + std::to_string(p_sig);
+        std::string mode_str = "unknown";
+        
+        switch(mode_idx) {
+            case 0: mode_str = "cpu_serial"; break;
+            case 1: mode_str = "cpu_parallel"; break;
+            case 2: mode_str = "gpu_global"; break;
+            case 3: mode_str = "gpu_shared"; break;
+        }
+
+        std::string f_name = mode_str + "_filtered_image_" + suffix;
+        std::string r_name = mode_str + "_residual_" + suffix;
+
+        std::string ret = write(img, f_name, r, c);
+        write(res, r_name, r, c);
+        
+        std::cout << "Files written: " << f_name << " & " << r_name << "\n\n";
+        return ret;
+    }
 }
-
-std::string write_images(const std::vector<float>& filtered_image,
-                         const std::vector<float>& residual,
-                         int patch_size,
-                         float filter_sigma,
-                         float patch_sigma,
-                         int row_num,
-                         int col_num,
-                         int mode)
-{
-    std::string params = std::to_string(patch_size) + "_" +
-                         std::to_string(filter_sigma) + "_" +
-                         std::to_string(patch_sigma);
-                         
-    std::string filtered_name = "filtered_image_" + params;
-    std::string mode_text = (mode == 0) ? "cpu_serial" :
-                            (mode == 1) ? "cpu_parallel" :
-                            (mode == 2) ? "gpu_global" :
-                            (mode == 3) ? "gpu_shared" :
-                            "unknown";
-
-    // --- Write filtered image ---
-    filtered_name = mode_text + "_" + filtered_name;
-    std::string ret = file::write(filtered_image, filtered_name, row_num, col_num);
-
-    // --- Write residual ---
-    std::string res_name = "residual_" + params;
-    res_name = mode_text + "_" + res_name;
-    file::write(residual, res_name, row_num, col_num);
-
-    std::cout << "Output files generated successfully." << std::endl << std::endl;
-
-    return ret;
-}
-
-} // namespace file
 
 namespace test
 {
-
-void out(const std::string& stand_out_path, const std::string& out_path, int n)
-{
-    try
+    inline void validate(const std::string& gold_path, const std::string& test_path, int n)
     {
-        std::vector<float> stand_out = file::read(stand_out_path, n, n, ',');
-        std::vector<float> out_vec = file::read(out_path, n, n, ' '); // Assuming space delim for output
+        auto gold = file::read(gold_path, n, n, ',');
+        auto result = file::read(test_path, n, n, ' ');
+        int errs = 0;
+        bool success = true;
 
-        bool passed = true;
-        int error_count = 0;
-
-        for (int i = 0; i < n * n; i++)
+        for (size_t i = 0; i < gold.size(); i++)
         {
-            // Robust float comparison
-            if (std::abs(stand_out[i] - out_vec[i]) > util::EPSILON)
+            if (std::abs(gold[i] - result[i]) > util::EPSILON)
             {
-                if (error_count < 10) // Limit error spam
-                {
-                    std::cout << "Error at index " << i << ": Expected " << stand_out[i]
-                              << ", Got " << out_vec[i] << std::endl;
-                }
-                passed = false;
-                error_count++;
+                if (errs++ < 10)
+                    std::cout << "Mismatch at " << i << ": Ref=" << gold[i] << " Act=" << result[i] << "\n";
+                success = false;
             }
         }
 
-        if (passed)
-        {
-            std::cout << "Correct output - Test PASSED" << std::endl << std::endl;
-        }
-        else
-        {
-            std::cout << "Wrong output - Test FAILED (Total errors: " << error_count << ")" << std::endl << std::endl;
-        }
+        if (success) std::cout << "Validation: PASSED\n\n";
+        else std::cout << "Validation: FAILED (" << errs << " errors)\n\n";
     }
-    catch (const std::exception& e)
+
+    inline float calc_mse(const std::string& gold_path, const std::string& test_path, int n)
     {
-        std::cerr << "Test execution failed: " << e.what() << std::endl;
+        auto gold = file::read(gold_path, n, n, ',');
+        auto result = file::read(test_path, n, n, ' ');
+        double sum_sq = 0;
+        for (size_t i = 0; i < gold.size(); i++)
+        {
+            sum_sq += std::pow(gold[i] - result[i], 2);
+        }
+        return static_cast<float>(sum_sq / (n * n));
     }
 }
-
-float compute_mean_squared_error(const std::string& original_out_path, const std::string& out_path, int n)
-{
-    try
-    {
-        std::vector<float> original_out = file::read(original_out_path, n, n, ',');
-        std::vector<float> out_vec = file::read(out_path, n, n, ' ');
-        double res = 0; // Use double for accumulation precision
-
-        for (int i = 0; i < n * n; i++)
-        {
-            res += pow(original_out[i] - out_vec[i], 2);
-        }
-
-        return (float)(res / (n * n));
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << "MSE Calculation failed: " << e.what() << std::endl;
-        return -1.0f;
-    }
-}
-
-} // namespace test
 
 #endif // __UTILS_CUH__

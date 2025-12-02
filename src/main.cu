@@ -118,7 +118,13 @@ int main(int argc, char** argv)
     else if (image_num == 2)
     {
         n = 256;
-        image_path = "./data/in/noisy_lena.txt";
+        image_path = "./data/in/noisy_lena_256.txt";
+    }
+
+    else if (image_num == 3)
+    {
+        n = 512;
+        image_path = "./data/in/noisy_lena_512.txt";
     }
     std::cout << "  Image path:   " << image_path << " (" << n << "x" << n << ")" << std::endl << std::endl;
 

@@ -201,7 +201,7 @@ namespace file
         {
             for (int j = 0; j < c; j++)
             {
-                out_stream << data[i * c + j] << " ";
+                out_stream << data[i * c + j] << ",";
             }
             out_stream << "\n";
         }

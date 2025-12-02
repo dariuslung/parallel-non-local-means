@@ -30,7 +30,7 @@ The program is run from the command line. You can select the execution mode and 
 | Flag | Long Flag      | Description                            | Default |
 | :----| :------------: | :------------------------------------: | ------: |
 | -m   | --mode         | Execution Mode <0-3>                   | 0       | 
-| -n   | --image-num    | ID of the input image to use <0-2>     | 0       | 
+| -n   | --image-num    | ID of the input image to use <0-3>     | 0       | 
 | -p   | --patch-size   | Size of the square patch (k×k)         | 5       | 
 | -f   | --filter-sigma | Smoothing parameter h (controls decay) | 0.06    | 
 | -s   | --patch-sigma  | Standard deviation for patch Gaussian  | 0.8     | 
@@ -45,4 +45,5 @@ The program is run from the command line. You can select the execution mode and 
 ### Input Image (`-n`)
 - `0` **House**: 64x64
 - `1` **Flower**: 128x128
-- `2` **Lena**: 256x256
+- `2` **Lena_256**: 256x256
+- `3` **Lena_512**: 512x512

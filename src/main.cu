@@ -130,7 +130,7 @@ int main(int argc, char** argv)
 
     // --- Read files ---
     std::vector<float> image = file::read(image_path, n, n, ',');
-    std::cout << "Image loaded." << std::endl;
+    std::cout << "Image loaded." << std::endl << std::endl;
     std::vector<float> filtered_image;
 
     // --- CPU Image Filtering ---
@@ -160,6 +160,7 @@ int main(int argc, char** argv)
         filtered_image = gpu_shared_mem::filter_image(image.data(), n, patch_size, patch_sigma, filter_sigma);
         timer.stop();
     }
+    std::cout << std::endl;
 
     // --- Residual computation ---
     std::vector<float> residual = util::calc_diff_image(image, filtered_image, n);

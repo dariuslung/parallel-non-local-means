@@ -13,38 +13,34 @@ namespace cpu_serial
 
         float compute_single_pixel(const float* img_ptr, int r, int c)
         {
-            float result_acc = 0.0f;
-            float weight_acc = 0.0f;
+            float result_accum = 0.0f;
+            float total_weight = 0.0f;
             
             int n = params.img_width;
             int ps = params.patch_size;
-            int half_ps = ps / 2;
+            int offset = ps / 2;
 
-            int p_curr_r = r - half_ps;
-            int p_curr_c = c - half_ps;
-            
-            // Iterate over entire image to find similar patches
+            int r_start = r - offset;
+            int c_start = c - offset;
+
+            // Inner loop remains serial as it represents the atomic task for one thread
             for (int i = 0; i < n; i++)
             {
                 for (int j = 0; j < n; j++)
                 {
-                    int p_other_r = i - half_ps;
-                    int p_other_c = j - half_ps;
-
                     float dist = util::calc_patch_dist(img_ptr,
                                                        gaussian_weights.data(),
                                                        n, ps,
-                                                       p_curr_r, p_curr_c,
-                                                       p_other_r, p_other_c);
+                                                       r_start, c_start,
+                                                       i - offset, j - offset);
 
                     float w = util::calc_exponent_weight(dist, params.filter_sigma);
                     
-                    weight_acc += w;
-                    result_acc += w * img_ptr[i * n + j];
+                    total_weight += w;
+                    result_accum += w * img_ptr[i * n + j];
                 }
             }
-
-            return result_acc / weight_acc;
+            return result_accum / total_weight;
         }
 
     public:
@@ -54,13 +50,13 @@ namespace cpu_serial
             gaussian_weights = util::generate_gaussian_kernel(patch_size, p_sigma);
         }
 
-        std::vector<float> process(const std::vector<float>& input_img)
+        std::vector<float> execute(const std::vector<float>& input_img)
         {
             // Convert to raw pointer for internal processing
             const float* raw_img = input_img.data();
             std::vector<float> output_img(params.img_width * params.img_width);
-            auto start_time = std::chrono::high_resolution_clock::now();
-
+            util::Timer timer(true);
+            timer.start("NLM Calculation in CPU Serial");
             for (int i = 0; i < params.img_width; i++)
             {
                 for (int j = 0; j < params.img_width; j++)
@@ -68,9 +64,7 @@ namespace cpu_serial
                     output_img[i * params.img_width + j] = compute_single_pixel(raw_img, i, j);
                 }
             } 
-            auto end_time = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-            std::cout << "NLM Calculation for entire image (" << params.img_width << "x" << params.img_width << ") took: " << duration.count() / 1000.0 << " ms" << std::endl; 
+            timer.stop();
             return output_img;
         }
     };
@@ -82,7 +76,7 @@ namespace cpu_serial
         std::vector<float> img_vec(image, image + n * n);
         
         SerialNlm processor(n, patch_size, patch_sigma, filter_sigma);
-        return processor.process(img_vec);
+        return processor.execute(img_vec);
     }
 }
 

@@ -90,11 +90,14 @@ namespace gpu_global_mem
 
         std::vector<float> run(float* image_data)
         {
+            std::cout << "CUDA Total Threads: " << params.img_width * params.img_width << std::endl;
+
             std::vector<float> result_host(params.img_width * params.img_width);
             std::vector<float> weights = util::generate_gaussian_kernel(params.patch_size, params.patch_sigma);
 
             allocate_resources(weights, image_data);
-            auto start_time = std::chrono::high_resolution_clock::now();
+            util::Timer timer(true);
+            timer.start("NLM Calculation in GPU Global Memory");
             // Launch configuration:
             // Grid size = n (one block per row)
             // Block size = n (one thread per col)
@@ -108,9 +111,8 @@ namespace gpu_global_mem
             
             gpu_err_chk(cudaPeekAtLastError());
             gpu_err_chk(cudaDeviceSynchronize());
-            auto end_time = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-            std::cout << "NLM Calculation in GPU Global memory (" << params.img_width << "x" << params.img_width << ") took: " << duration.count() / 1000.0 << " ms" << std::endl; 
+            timer.stop();
+
             size_t img_bytes = params.img_width * params.img_width * sizeof(float);
             gpu_err_chk(cudaMemcpy(result_host.data(), dev_out_buf, img_bytes, cudaMemcpyDeviceToHost));
 

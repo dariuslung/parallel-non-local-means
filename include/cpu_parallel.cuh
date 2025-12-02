@@ -14,7 +14,7 @@ namespace cpu_parallel
 
         // Internal helper for pixel calculation
         // Marked const to ensure thread safety (read-only on members)
-        float solve_pixel(const float* img_ptr, int r, int c) const
+        float compute_single_pixel(const float* img_ptr, int r, int c) const
         {
             float result_accum = 0.0f;
             float total_weight = 0.0f;
@@ -58,22 +58,24 @@ namespace cpu_parallel
             int n = params.img_width;
             std::vector<float> result(n * n);
 
+            int max_threads = omp_get_max_threads();
+            std::cout << "OpenMP Max Threads: " << max_threads << std::endl;
+
             // OMP Directive:
             // collapse(2) merges loops for better granularity
             // schedule(dynamic) helps if some pixels take longer (e.g. boundary checks)
-            auto start_time = std::chrono::high_resolution_clock::now();
+            util::Timer timer(true);
+            timer.start("NLM Calculation in CPU Parallel");
             #pragma omp parallel for collapse(2) schedule(dynamic)
             for (int i = 0; i < n; i++)
             {
                 for (int j = 0; j < n; j++)
                 {
                     // Thread-safe write to distinct memory locations
-                    result[i * n + j] = solve_pixel(input_data, i, j);
+                    result[i * n + j] = compute_single_pixel(input_data, i, j);
                 }
             }
-            auto end_time = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-            std::cout << "NLM Calculation in CPU parallel (" << params.img_width << "x" << params.img_width << ") took: " << duration.count() / 1000.0 << " ms" << std::endl; 
+            timer.stop();
             return result;
         }
     };

@@ -63,7 +63,7 @@ namespace util
             
             if (should_print)
             {
-                std::cout << "\n[Timer] " << operation_name << ": " << duration_val / 1e3 << " ms\n" << std::endl;
+                std::cout << "[Timer] " << operation_name << ": " << duration_val / 1e3 << " ms" << std::endl;
             }
         }
     };

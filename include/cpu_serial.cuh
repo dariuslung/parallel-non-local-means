@@ -22,7 +22,7 @@ namespace cpu_serial
 
             int p_curr_r = r - half_ps;
             int p_curr_c = c - half_ps;
-
+            
             // Iterate over entire image to find similar patches
             for (int i = 0; i < n; i++)
             {
@@ -59,6 +59,7 @@ namespace cpu_serial
             // Convert to raw pointer for internal processing
             const float* raw_img = input_img.data();
             std::vector<float> output_img(params.img_width * params.img_width);
+            auto start_time = std::chrono::high_resolution_clock::now();
 
             for (int i = 0; i < params.img_width; i++)
             {
@@ -66,7 +67,10 @@ namespace cpu_serial
                 {
                     output_img[i * params.img_width + j] = compute_single_pixel(raw_img, i, j);
                 }
-            }
+            } 
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+            std::cout << "NLM Calculation for entire image (" << params.img_width << "x" << params.img_width << ") took: " << duration.count() / 1000.0 << " ms" << std::endl; 
             return output_img;
         }
     };

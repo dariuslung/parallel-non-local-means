@@ -61,6 +61,7 @@ namespace cpu_parallel
             // OMP Directive:
             // collapse(2) merges loops for better granularity
             // schedule(dynamic) helps if some pixels take longer (e.g. boundary checks)
+            auto start_time = std::chrono::high_resolution_clock::now();
             #pragma omp parallel for collapse(2) schedule(dynamic)
             for (int i = 0; i < n; i++)
             {
@@ -70,7 +71,9 @@ namespace cpu_parallel
                     result[i * n + j] = solve_pixel(input_data, i, j);
                 }
             }
-
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+            std::cout << "NLM Calculation for entire image (" << params.img_width << "x" << params.img_width << ") took: " << duration.count() / 1000.0 << " ms" << std::endl; 
             return result;
         }
     };

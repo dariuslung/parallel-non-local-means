@@ -120,7 +120,7 @@ namespace gpu_shared_mem
             // Shared memory size calculation:
             // width * patch_size floats are needed per block (per row logic)
             size_t bytes_shared = params.img_width * params.patch_size * sizeof(float);
-
+            
             std::vector<float> host_res(params.img_width * params.img_width);
             std::vector<float> host_weights = util::generate_gaussian_kernel(params.patch_size, params.patch_sigma);
 
@@ -130,7 +130,7 @@ namespace gpu_shared_mem
 
             gpu_err_chk(cudaMemcpy(d_img_ptr, host_img, bytes_img, cudaMemcpyHostToDevice));
             gpu_err_chk(cudaMemcpy(d_weights_ptr, host_weights.data(), bytes_weights, cudaMemcpyHostToDevice));
-
+            auto start_time = std::chrono::high_resolution_clock::now();
             k_nlm_shared<<<params.img_width, params.img_width, bytes_shared>>>(d_img_ptr, 
                                                                                d_weights_ptr, 
                                                                                params.img_width, 
@@ -142,7 +142,10 @@ namespace gpu_shared_mem
             gpu_err_chk(cudaDeviceSynchronize());
 
             gpu_err_chk(cudaMemcpy(host_res.data(), d_res_ptr, bytes_img, cudaMemcpyDeviceToHost));
-
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+            std::cout << "NLM GPU Global Calculation (" << params.img_width << "x" << params.img_width << ") took: " << duration.count() / 1000.0 << " ms" << std::endl; 
+            
             cudaFree(d_img_ptr);
             cudaFree(d_weights_ptr);
             cudaFree(d_res_ptr);

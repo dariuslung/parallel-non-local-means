@@ -13,7 +13,7 @@ void print_usage(const char* program_name)
 {
     std::cout << "Usage: " << program_name << " [options]\n"
               << "Options:\n"
-              << "  -m, --mode <int>           Set mode (0: CPU Serial, 1: CPU Parallel, 2: GPU Global Memory, 3: GPU Shared Memory) (Default: 0)\n"
+              << "  -m, --mode <int>           Set mode (Default: 0)\n"
               << "  -n, --image-num <int>      Set image number (Default: 0)\n"
               << "  -p, --patch-size <int>     Set patch size (Default: 5)\n"
               << "  -f, --filter-sigma <float> Set filter sigma (Default: 0.06)\n"
@@ -32,7 +32,9 @@ int main(int argc, char** argv)
         0: CPU Serial
         1: CPU Parallel
         2: GPU Global Memory
-        3: GPU Shared Memory
+        3: GPU Global Memory + Intrinsics
+        4: GPU Shared Memory
+        5: GPU Shared Memory + Intrinsics
     -------------------------- */
     int mode = 0;
     int image_num = 0;
@@ -151,13 +153,25 @@ int main(int argc, char** argv)
     else if (mode == 2)
     {
         timer.start("GPU Global Memory");
-        filtered_image = gpu_global_mem::filter_image(image.data(), n, patch_size, patch_sigma, filter_sigma);
+        filtered_image = gpu_global_mem::filter_image(image.data(), n, patch_size, patch_sigma, filter_sigma, false);
         timer.stop();
     }
     else if (mode == 3)
     {
+        timer.start("GPU Global Memory + Intrinsics");
+        filtered_image = gpu_global_mem::filter_image(image.data(), n, patch_size, patch_sigma, filter_sigma, true);
+        timer.stop();
+    }
+    else if (mode == 4)
+    {
         timer.start("GPU Shared Memory");
-        filtered_image = gpu_shared_mem::filter_image(image.data(), n, patch_size, patch_sigma, filter_sigma);
+        filtered_image = gpu_shared_mem::filter_image(image.data(), n, patch_size, patch_sigma, filter_sigma, false);
+        timer.stop();
+    }
+    else if (mode == 5)
+    {
+        timer.start("GPU Shared Memory + Intrinsics");
+        filtered_image = gpu_shared_mem::filter_image(image.data(), n, patch_size, patch_sigma, filter_sigma, true);
         timer.stop();
     }
     std::cout << std::endl;

@@ -69,7 +69,6 @@ namespace util
     };
 
     // --- Math & Bounds Helpers ---
-
     __host__ __device__ inline bool check_bound(int limit, int r, int c)
     {
         return (r >= 0 && r < limit && c >= 0 && c < limit);
@@ -80,7 +79,52 @@ namespace util
         return expf(-dist_sq / (sigma * sigma));
     }
 
-    // Standard Euclidean distance for patches (Host & Global Memory GPU)
+    template <bool UseIntrinsics>
+    __device__ __forceinline__ float compute_diff_squared(float a, float b, float current_sum)
+    {
+        float diff = a - b;
+        if constexpr (UseIntrinsics)
+        {
+            // Fused Multiply-Add: (diff * diff) + current_sum
+            return __fmaf_rn(diff, diff, current_sum);
+        }
+        else
+        {
+            return current_sum + (diff * diff);
+        }
+    }
+
+    template <bool UseIntrinsics>
+    __device__ __forceinline__ float compute_weight_metric(float dist, float neg_inv_sigma_sq)
+    {
+        if constexpr (UseIntrinsics)
+        {
+            // __expf is an intrinsic hardware approximation
+            return __expf(dist * neg_inv_sigma_sq);
+        }
+        else
+        {
+            // expf is the standard IEEE-754 compliant routine
+            // We must perform the division manually here
+            // Note: neg_inv_sigma_sq holds -1.0/sigma^2. 
+            return expf(dist * neg_inv_sigma_sq);
+        }
+    }
+
+    template <bool UseIntrinsics>
+    __device__ __forceinline__ float accumulate_pixel(float weight, float value, float current_sum)
+    {
+        if constexpr (UseIntrinsics)
+        {
+            return __fmaf_rn(weight, value, current_sum);
+        }
+        else
+        {
+            return current_sum + (weight * value);
+        }
+    }
+
+    // Standard Euclidean distance for patches (CPU/Host)
     __host__ __device__ inline float calc_patch_dist(const float * img_data,
                                                      const float * weight_kernel,
                                                      int width,
@@ -218,7 +262,9 @@ namespace file
             case 0: mode_str = "cpu_serial"; break;
             case 1: mode_str = "cpu_parallel"; break;
             case 2: mode_str = "gpu_global"; break;
-            case 3: mode_str = "gpu_shared"; break;
+            case 3: mode_str = "gpu_global_intrinsics"; break;
+            case 4: mode_str = "gpu_shared"; break;
+            case 5: mode_str = "gpu_shared_intrinsics"; break;
         }
 
         std::string f_name = mode_str + "_filtered_image_" + suffix;

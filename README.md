@@ -32,7 +32,7 @@ The program is run from the command line. You can select the execution mode and 
 ### Options
 | Flag |   Long Flag    |              Description               | Default |
 |:---- |:--------------:|:--------------------------------------:| -------:|
-| -m   |     --mode     |          Execution Mode <0-3>          |       0 |
+| -m   |     --mode     |          Execution Mode <0-5>          |       0 |
 | -n   |  --image-num   |   ID of the input image to use <0-3>   |       0 |
 | -p   |  --patch-size  |     Size of the square patch (k×k)     |       5 |
 | -f   | --filter-sigma | Smoothing parameter h (controls decay) |    0.06 |

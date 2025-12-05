@@ -95,7 +95,7 @@ Ensure you have generated benchmark_results.csv using the benchmark script, then
 ```
 python3 plot_results.py
 ```
-This will generate benchmark_plot.png, a bar chart visualizing the execution time (log scale) with error bars representing the standard deviation.
+This will generate benchmark_plot.png, a bar chart visualizing the execution time (log scale).
 
 ### Example
 <img width="600" alt="GPU_Optimizations_NLM" src="https://github.com/user-attachments/assets/41635718-9f54-46eb-9fbb-6c6e1e7b300c" />

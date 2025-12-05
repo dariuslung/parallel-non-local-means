@@ -4,21 +4,22 @@ This project implements the Non-Local Means (NLM) algorithm for the course of NY
 
 ## Project Overview
 Non-Local Means is a powerful denoising technique that preserves textures by averaging similar patches from across the image. However, its high computational cost $O(N^4)$ makes it slow on standard CPUs. This project accelerates the algorithm using:
-1. OpenMP: Multi-threading for CPU.
-2. CUDA (Global Memory): Massively parallel GPU computing.
-3. CUDA (Shared Memory): Optimizing GPU memory bandwidth by caching image patches.
+1. **OpenMP:** Multi-threading for CPU.
+2. **CUDA (Global Memory):** Massively parallel GPU computing.
+3. **CUDA (Shared Memory):** Optimizing GPU memory bandwidth by caching image patches.
+
 
 ## Requirements
-- Compiler: g++ (with OpenMP support)
-- CUDA Toolkit: nvcc (NVIDIA CUDA Compiler)
-- Make: Build system
+- **Compiler:** g++ (with OpenMP support)
+- **CUDA Toolkit:** nvcc (NVIDIA CUDA Compiler)
+- **Make:** Build system
+
 
 ## Compilation
 To build the project, simply run make in the root directory.
 ```
 make
 ```
-
 
 ## Usage
 The program is run from the command line. You can select the execution mode and tune the NLM parameters using the flags below.
@@ -54,7 +55,7 @@ The program is run from the command line. You can select the execution mode and 
 
 
 ## Benchmarking
-The project includes a shell script benchmark.sh to automate testing across multiple modes and image sizes. It handles warm-up runs, multiple iterations, and data export in csv.
+The project includes a shell script benchmark.sh to automate testing across multiple modes and image sizes. It handles warm-up runs, multiple iterations, and data export in `data/benchmark/benchmark_results.csv`.
 
 ### Syntax
 ```
@@ -62,14 +63,14 @@ The project includes a shell script benchmark.sh to automate testing across mult
 ```
 
 ### Options
-| Flag |                   Description                    |   Default |
-|:---- |:------------------------------------------------:| ---------:|
-| -m   |   List of modes to run (quoted, e.g., `"2 3"`)   | `2 3 4 5` |
-| -n   | List of image IDs to run (quoted, e.g., `"0 1"`) | `0 1 2 3` |
-| -i   |          Number of iterations per test           |       `5` |
-| -t   |         Timer selection logic (1, or 2)          |       `1` |
+| Flag |                   Description                    | Default |
+|:---- |:------------------------------------------------:| -------:|
+| -m   |   List of modes to run (quoted, e.g., `"2 3"`)   | 2 3 4 5 |
+| -n   | List of image IDs to run (quoted, e.g., `"0 1"`) | 0 1 2 3 |
+| -i   |          Number of iterations per test           |       5 |
+| -t   |         Timer selection logic <1-2>              |       1 |
 
-### Timer Selection
+### Timer Selection (`-t`)
 - `0` **NLM**: Only times the NLM portion.
 - `1` **Total**: Time the total (serial + parallel) portion.
 
@@ -95,3 +96,6 @@ Ensure you have generated benchmark_results.csv using the benchmark script, then
 python3 plot_results.py
 ```
 This will generate benchmark_plot.png, a bar chart visualizing the execution time (log scale) with error bars representing the standard deviation.
+
+### Example
+<img width="600" alt="GPU_Optimizations_NLM" src="https://github.com/user-attachments/assets/41635718-9f54-46eb-9fbb-6c6e1e7b300c" />
